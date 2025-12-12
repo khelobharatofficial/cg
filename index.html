@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Chhattisgarh Map Data Visualiser — With District Callouts</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+
+  <!-- D3 & TopoJSON -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"
+          crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://unpkg.com/topojson-client@3"></script>
+
+  <!-- Export libs -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"
+          crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
+          crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+  <style>
+    *{box-sizing:border-box}
+    body{
+      font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial;
+      background:#f4f6fb;margin:0;color:#111;
+      -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;
+    }
+    .container{max-width:1200px;margin:18px auto;padding:16px}
+    .layout{display:grid;grid-template-columns:minmax(260px,360px) 1fr;gap:16px}
+    @media (max-width:900px){.layout{grid-template-columns:1fr}}
+    .card{background:#fff;border-radius:10px;padding:14px;box-shadow:0 6px 18px rgba(10,20,50,0.06)}
+    h1{margin:0 0 8px;font-size:24px}
+    label{display:block;font-weight:600;margin:8px 0 4px;font-size:0.95rem}
+    input[type="text"],select,textarea{width:100%;padding:8px;border-radius:6px;border:1px solid #d1d7e0;font-size:0.95rem}
+    textarea{min-height:80px;resize:vertical}
+    .row{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+    .row select{flex:1}
+    .row input[type="color"]{width:44px;height:34px;padding:0;border:none}
+    .row .data-input{width:150px;min-width:120px}
+    button{background:#2563eb;color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer;font-weight:700}
+    button.secondary{background:#0f766e;margin-left:6px}
+    button:disabled{opacity:.6;cursor:not-allowed}
+    .small{font-size:0.82rem;color:#666;margin-top:6px}
+    #map-wrap{background:#f8fafc;border-radius:8px;padding:8px;border:1px solid #e6eef6}
+    #map-area{min-height:520px;border-radius:6px;background:#fff;padding:8px;display:flex;align-items:center;justify-content:center;position:relative}
+    svg{width:100%;height:auto;display:block}
+    #data-box{margin-top:10px;padding:10px;border-radius:8px;background:#f1f5f9;border:1px solid #e2e8f0}
+    .callout-label {
+      font-size:12px;
+      font-weight:600;
+      fill: #0b1220;
+    }
+    .callout-sub {
+      font-size:11px;
+      fill: #0b1220;
+    }
+    .label-bg {
+      fill: #ffffff;
+      stroke: #e2e8f0;
+      stroke-width: 0.8px;
+      rx: 6px;
+      ry: 6px;
+      filter: drop-shadow(0 1px 2px rgba(0,0,0,0.08));
+    }
+    footer{margin-top:18px;text-align:center;color:#555}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Chhattisgarh Map Data Visualiser — District Callouts</h1>
+    <p class="small">Choose districts, pick colours, provide data for each district and the map will show callouts (lines) to labels outside the map.</p>
+
+    <div class="layout">
+      <!-- Left controls -->
+      <div class="card">
+        <label for="mapTitle">Map title</label>
+        <input id="mapTitle" type="text" placeholder="e.g. Health Centres by District" />
+
+        <label for="numDistricts">Number of districts to colour & attach data</label>
+        <select id="numDistricts">
+          <option value="0">0</option>
+          <option>1</option><option>2</option><option>3</option><option>4</option><option>5</option>
+          <option>6</option><option>7</option><option>8</option><option>9</option><option>10</option>
+          <option>11</option><option>12</option><option>13</option><option>14</option><option>15</option>
+          <option>16</option><option>17</option><option>18</option><option>19</option><option>20</option>
+        </select>
+        <div class="small">Each row: choose district, colour, and the data text that will appear in a label outside the map.</div>
+
+        <div id="district-selectors" style="margin-top:10px"></div>
+
+        <hr style="margin:12px 0;border:none;border-top:1px solid #eef2f7" />
+
+        <label for="dataTitle">Title of data</label>
+        <input id="dataTitle" type="text" placeholder="e.g. Vaccination Rate (2025)" />
+
+        <label for="dataDescription">Data description</label>
+        <textarea id="dataDescription" placeholder="Short description that will appear below the map..."></textarea>
+
+        <div style="margin-top:10px">
+          <button id="generateBtn">Generate Map</button>
+          <span id="status" class="small" style="margin-left:10px"></span>
+        </div>
+
+        <hr style="margin:12px 0;border:none;border-top:1px solid #eef2f7" />
+
+        <div>
+          <button id="downloadPng" class="secondary" disabled>Download PNG</button>
+          <button id="downloadPdf" class="secondary" disabled>Download PDF</button>
+          <div class="small" style="margin-top:6px">Export buttons enable after generating the map.</div>
+        </div>
+      </div>
+
+      <!-- Right preview -->
+      <div class="card">
+        <div id="map-wrap">
+          <div id="map-area">
+            <span class="small">Map will appear here after you click Generate Map.</span>
+          </div>
+          <div id="data-box">
+            <h3 id="dataTitleDisplay">Data title will appear here</h3>
+            <p id="dataDescriptionDisplay">Data description will appear here after generation.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <footer>© 2025 <strong>Khelo Bharat Officials</strong>.</footer>
+  </div>
+
+  <script>
+    // Globals
+    let topo = null;
+    let features = [];
+    let districtNames = [];
+    const objectKey = "districts"; // as in chhattisgarh.json (object is named "districts")
+    const nameProp = "district";   // property that contains district name in chhattisgarh.json
+
+    const statusEl = document.getElementById("status");
+
+    // Load TopoJSON
+    fetch("chhattisgarh.json")
+      .then(r => {
+        if (!r.ok) throw new Error("Failed to load chhattisgarh.json — make sure it's in the same folder.");
+        return r.json();
+      })
+      .then(t => {
+        topo = t;
+        if (!t.objects || !t.objects[objectKey]) {
+          throw new Error("chhattisgarh.json doesn't contain an object named 'districts'.");
+        }
+        const geo = topojson.feature(t, t.objects[objectKey]);
+        features = geo.features || [];
+        const set = new Set();
+        features.forEach(f => {
+          const nm = (f.properties && f.properties[nameProp]) || f.id || "Unknown";
+          set.add(nm);
+        });
+        districtNames = Array.from(set).sort((a,b)=>a.localeCompare(b));
+        buildSelectors(0);
+        statusEl.textContent = `Loaded ${districtNames.length} districts.`;
+      })
+      .catch(err => {
+        console.error(err);
+        statusEl.textContent = err.message;
+      });
+
+    // Build selectors (with an extra input for the data value)
+    function buildSelectors(count){
+      const container = document.getElementById("district-selectors");
+      container.innerHTML = "";
+      for(let i=0;i<count;i++){
+        const row = document.createElement("div");
+        row.className = "row";
+
+        const label = document.createElement("div");
+        label.style.minWidth="70px";
+        label.style.fontWeight="600";
+        label.style.fontSize="0.9rem";
+        label.textContent = `#${i+1}:`;
+
+        const sel = document.createElement("select");
+        sel.className = "district-select";
+        const defaultOpt = document.createElement("option");
+        defaultOpt.value = "";
+        defaultOpt.textContent = "-- select district --";
+        sel.appendChild(defaultOpt);
+        districtNames.forEach(n=>{
+          const o = document.createElement("option");
+          o.value = n; o.textContent = n;
+          sel.appendChild(o);
+        });
+
+        const color = document.createElement("input");
+        color.type = "color";
+        color.className = "district-color";
+        color.value = "#3b82f6";
+
+        const dataInput = document.createElement("input");
+        dataInput.type = "text";
+        dataInput.placeholder = "district data (e.g. 72%)";
+        dataInput.className = "data-input district-data";
+
+        row.appendChild(label);
+        row.appendChild(sel);
+        row.appendChild(color);
+        row.appendChild(dataInput);
+        container.appendChild(row);
+      }
+    }
+
+    document.getElementById("numDistricts").addEventListener("change", e=>{
+      const c = parseInt(e.target.value) || 0;
+      buildSelectors(c);
+    });
+
+    // Read mappings: colours and data text
+    function getMappings(){
+      const mapping = {};   // district -> color
+      const dataMap = {};   // district -> data text
+      const sels = document.querySelectorAll(".district-select");
+      const cols = document.querySelectorAll(".district-color");
+      const datas = document.querySelectorAll(".district-data");
+      sels.forEach((s,i)=>{
+        const name = s.value;
+        const color = (cols[i] && cols[i].value) || "#000000";
+        const dataText = (datas[i] && datas[i].value) || "";
+        if(name){
+          mapping[name] = color;
+          dataMap[name] = dataText;
+        }
+      });
+      return { mapping, dataMap };
+    }
+
+    function featureName(f){
+      return (f.properties && f.properties[nameProp]) || f.id || "Unknown";
+    }
+
+    // compute centroid positions of features in projected coordinates
+    function computeCentroids(projection){
+      const centroids = {};
+      features.forEach(f => {
+        const centroid = d3.geoCentroid(f);
+        const point = projection(centroid); // [x,y] in svg coords
+        centroids[ featureName(f) ] = point;
+      });
+      return centroids;
+    }
+
+    // Draw map + callouts
+    function draw(){
+      if(!features.length){ alert("TopoJSON not loaded yet."); return; }
+
+      const mapTitle = document.getElementById("mapTitle").value.trim();
+      const dataTitle = document.getElementById("dataTitle").value.trim();
+      const dataDescription = document.getElementById("dataDescription").value.trim();
+      document.getElementById("dataTitleDisplay").textContent = dataTitle || "No data title given";
+      document.getElementById("dataDescriptionDisplay").textContent = dataDescription || "No data description provided.";
+
+      const { mapping, dataMap } = getMappings();
+
+      const wrap = d3.select("#map-area");
+      wrap.selectAll("*").remove();
+
+      const width = 920;
+      const height = 700;
+      const svg = wrap.append("svg")
+        .attr("viewBox", `0 0 ${width} ${height}`)
+        .attr("preserveAspectRatio","xMidYMid meet");
+
+      if(mapTitle){
+        svg.append("text")
+          .attr("x", width/2)
+          .attr("y", 30)
+          .attr("text-anchor","middle")
+          .attr("font-size",20)
+          .attr("font-weight",700)
+          .text(mapTitle);
+      }
+
+      const g = svg.append("g")
+        .attr("transform", mapTitle ? "translate(0,44)" : "translate(0,10)");
+
+      const innerWidth = width;
+      const innerHeight = height - 60;
+
+      // projection
+      const projection = d3.geoMercator()
+        .fitSize([innerWidth, innerHeight], { type:"FeatureCollection", features });
+
+      const path = d3.geoPath().projection(projection);
+
+      // Fill districts (no stroke to hide internal seams)
+      g.selectAll("path.district")
+        .data(features)
+        .join("path")
+        .attr("class","district")
+        .attr("d", path)
+        .attr("fill", d => {
+          const nm = featureName(d);
+          return mapping[nm] || "#ffffff";
+        })
+        .attr("stroke","none");
+
+      // Add state/district internal borders & outer outline using topojson.mesh
+      if(topo && topo.objects && topo.objects[objectKey]){
+        const obj = topo.objects[objectKey];
+
+        const outer = topojson.mesh(topo, obj, (a,b) => a === b);
+        g.append("path")
+          .attr("d", path(outer))
+          .attr("fill","none")
+          .attr("stroke","#0f1724")
+          .attr("stroke-width",1.1);
+
+        const internal = topojson.mesh(topo, obj, (a,b) =>
+          a !== b && a.properties && b.properties && a.properties[nameProp] !== b.properties[nameProp]
+        );
+        g.append("path")
+          .attr("d", path(internal))
+          .attr("fill","none")
+          .attr("stroke","#0f1724")
+          .attr("stroke-width",0.6);
+      }
+
+      // compute centroids in SVG coords
+      const centroids = computeCentroids(projection);
+
+      // center of map to help push labels outward
+      const center = [innerWidth/2, innerHeight/2];
+
+      // build a list of callouts (only for selected districts with some data or not)
+      const calloutItems = Object.keys(mapping).map(name => {
+        return {
+          name,
+          color: mapping[name],
+          text: dataMap[name] || ""
+        };
+      });
+
+      // For each callout, compute label position: push centroid outward from center
+      const labelGroup = g.append("g").attr("class","callouts");
+
+      calloutItems.forEach((item, idx) => {
+        const c = centroids[item.name];
+        if(!c || !isFinite(c[0]) || !isFinite(c[1])) return;
+
+        // vector from center to centroid
+        const vx = c[0] - center[0];
+        const vy = c[1] - center[1];
+        const len = Math.sqrt(vx*vx + vy*vy) || 1;
+
+        // base label distance (adjust this if labels are too close/far)
+        const outward = Math.max(90, len * 0.9); // push outside map area a bit
+
+        // normalized direction
+        const nx = vx / len;
+        const ny = vy / len;
+
+        // label anchor point (outside)
+        const lx = center[0] + nx * outward;
+        const ly = center[1] + ny * outward;
+
+        // short line start slightly inside the centroid so it looks neat
+        const sx = c[0];
+        const sy = c[1];
+
+        // draw a leader line (from centroid -> label box anchor)
+        labelGroup.append("line")
+          .attr("x1", sx)
+          .attr("y1", sy)
+          .attr("x2", lx)
+          .attr("y2", ly)
+          .attr("stroke", item.color)
+          .attr("stroke-width", 2)
+          .attr("stroke-linecap", "round")
+          .attr("opacity", 0.95);
+
+        // compute text lines: first line is district name, second is data text (if provided)
+        const nameText = item.name;
+        const dataText = item.text && item.text.trim() ? item.text.trim() : null;
+
+        // measure estimated text width (approx) — we use character count * 6.5 px (rough)
+        const combined = dataText ? `${nameText} — ${dataText}` : nameText;
+        const estWidth = Math.min(280, Math.max(80, combined.length * 7)); // clamp
+
+        // label box coordinates: position the box with a small offset along normal
+        const boxPadX = 8;
+        const boxPadY = 6;
+
+        // shift label a bit perpendicular to the leader to avoid overlapping line
+        const perpX = -ny * 8;
+        const perpY = nx * 8;
+
+        const boxX = lx + perpX - estWidth/2;
+        const boxY = ly + perpY - 12; // small upwards adjust
+
+        // background rounded rect
+        labelGroup.append("rect")
+          .attr("x", boxX - boxPadX)
+          .attr("y", boxY - boxPadY)
+          .attr("width", estWidth + boxPadX*2)
+          .attr("height", dataText ? 36 : 24)
+          .attr("class", "label-bg")
+          .attr("rx", 6)
+          .attr("ry", 6)
+          .attr("fill", "#ffffff")
+          .attr("stroke", "#e2e8f0");
+
+        // district name
+        labelGroup.append("text")
+          .attr("x", boxX)
+          .attr("y", boxY + 10)
+          .attr("class", "callout-label")
+          .text(nameText);
+
+        // data text (smaller)
+        if(dataText){
+          labelGroup.append("text")
+            .attr("x", boxX)
+            .attr("y", boxY + 26)
+            .attr("class", "callout-sub")
+            .text(dataText);
+        }
+      });
+
+      // enable exports
+      document.getElementById("downloadPng").disabled = false;
+      document.getElementById("downloadPdf").disabled = false;
+      statusEl.textContent = "Map with callouts generated.";
+    }
+
+    document.getElementById("generateBtn").addEventListener("click", draw);
+
+    // Export helpers (includes callouts since they're in the same SVG)
+    async function downloadPNG(){
+      const area = document.getElementById("map-wrap");
+      const canvas = await html2canvas(area, {scale:2});
+      const link = document.createElement("a");
+      link.download = "chhattisgarh-map-callouts.png";
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+    }
+    async function downloadPDF(){
+      const area = document.getElementById("map-wrap");
+      const canvas = await html2canvas(area, {scale:2});
+      const img = canvas.toDataURL("image/png");
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF("p","mm","a4");
+      const pageW = pdf.internal.pageSize.getWidth();
+      const pageH = pdf.internal.pageSize.getHeight();
+      const imgProps = pdf.getImageProperties(img);
+      const pdfW = pageW - 12;
+      const pdfH = imgProps.height * pdfW / imgProps.width;
+      const y = Math.max((pageH - pdfH)/2, 8);
+      pdf.addImage(img,"PNG",6,y,pdfW,pdfH);
+      pdf.save("chhattisgarh-map-callouts.pdf");
+    }
+
+    document.getElementById("downloadPng").addEventListener("click", downloadPNG);
+    document.getElementById("downloadPdf").addEventListener("click", downloadPDF);
+  </script>
+</body>
+</html>
