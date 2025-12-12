@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Chhattisgarh Map — District Callouts Outside</title>
+  <title>Chhattisgarh Map — District Callouts (Left/Right Columns)</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
 
   <!-- D3 & TopoJSON -->
@@ -26,7 +26,7 @@
     .layout{display:grid;grid-template-columns:minmax(260px,360px) 1fr;gap:16px}
     @media (max-width:900px){.layout{grid-template-columns:1fr}}
     .card{background:#fff;border-radius:10px;padding:14px;box-shadow:0 6px 18px rgba(10,20,50,0.06)}
-    h1{margin:0 0 8px;font-size:24px}
+    h1{margin:0 0 8px;font-size:22px}
     label{display:block;font-weight:600;margin:8px 0 4px;font-size:0.95rem}
     input[type="text"],select{width:100%;padding:8px;border-radius:6px;border:1px solid #d1d7e0;font-size:0.95rem}
     .row{display:flex;gap:8px;align-items:center;margin-bottom:8px}
@@ -41,16 +41,16 @@
     #map-area{min-height:520px;border-radius:6px;background:#fff;padding:8px;display:flex;align-items:center;justify-content:center;position:relative}
     svg{width:100%;height:auto;display:block}
     #data-box{margin-top:10px;padding:10px;border-radius:8px;background:#f1f5f9;border:1px solid #e2e8f0}
-    .callout-label { font-size:12px; font-weight:600; fill:#071022; }
-    .callout-sub { font-size:11px; fill:#071022; }
     .label-bg { fill:#ffffff; stroke:#e2e8f0; stroke-width:0.8px; rx:6px; ry:6px; }
+    .label-name { font-size:12px; font-weight:700; fill:#071022; }
+    .label-value { font-size:12px; fill:#071022; opacity:0.9; }
     footer{margin-top:18px;text-align:center;color:#555}
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>Chhattisgarh Map — District Callouts (Outside)</h1>
-    <p class="small">Select districts, choose colour, enter the data text for each district. Labels will be placed outside the map and lines will point to the district.</p>
+    <h1>Chhattisgarh Map — District Callouts (Left/Right Columns)</h1>
+    <p class="small">Labels will appear in tidy columns on either side of the map. The data list prints below the map as 'District — value'.</p>
 
     <div class="layout">
       <!-- Controls -->
@@ -68,7 +68,7 @@
           <option>16</option><option>17</option><option>18</option><option>19</option><option>20</option>
         </select>
 
-        <div class="small">Each row: district, colour and the data text (e.g. "72%"). Labels will appear outside of the state boundary.</div>
+        <div class="small">Each row: district, colour and the data text (e.g. "11145").</div>
 
         <div id="district-selectors" style="margin-top:10px"></div>
 
@@ -99,8 +99,7 @@
           </div>
           <div id="data-box">
             <h3 id="dataTitleDisplay">Data title will appear here</h3>
-            <!-- removed separate description per your request -->
-            <div id="dataNote" class="small">You provided district data — labels appear around the map.</div>
+            <div id="dataList" class="small" style="margin-top:8px">Selected district data will list here as 'District — value'.</div>
           </div>
         </div>
       </div>
@@ -110,12 +109,13 @@
   </div>
 
   <script>
-    // Globals & config
+    // Globals
     let topo = null;
     let features = [];
     let districtNames = [];
     const objectKey = "districts"; // object name in chhattisgarh.json
-    const nameProp = "district";   // property name holding district name
+    const nameProp = "district";   // property name for district name
+
     const statusEl = document.getElementById("status");
 
     // Load TopoJSON
@@ -145,7 +145,7 @@
         statusEl.textContent = err.message;
       });
 
-    // Create selector rows (district, color, data text)
+    // Create selector rows
     function buildSelectors(count){
       const container = document.getElementById("district-selectors");
       container.innerHTML = "";
@@ -174,11 +174,11 @@
         const color = document.createElement("input");
         color.type = "color";
         color.className = "district-color";
-        color.value = "#3b82f6";
+        color.value = "#2563eb";
 
         const dataInput = document.createElement("input");
         dataInput.type = "text";
-        dataInput.placeholder = "data (e.g. 72%)";
+        dataInput.placeholder = "value (e.g. 11145)";
         dataInput.className = "data-input district-data";
 
         row.appendChild(label);
@@ -194,10 +194,10 @@
       buildSelectors(c);
     });
 
-    // Read mappings
+    // Read mappings and prepare data list
     function getMappings(){
       const mapping = {}; // district -> color
-      const dataMap = {}; // district -> data text
+      const dataMap = {}; // district -> text
       const sels = document.querySelectorAll(".district-select");
       const cols = document.querySelectorAll(".district-color");
       const datas = document.querySelectorAll(".district-data");
@@ -217,7 +217,7 @@
       return (f.properties && f.properties[nameProp]) || f.id || "Unknown";
     }
 
-    // Compute centroids in projected coordinates
+    // compute centroids (projected)
     function computeCentroids(projection){
       const centroids = {};
       features.forEach(f => {
@@ -228,32 +228,7 @@
       return centroids;
     }
 
-    // Compute ray-rectangle intersection (center + normalized direction)
-    // rectangle bounds: minX,minY,maxX,maxY. pad is margin to push outside.
-    function rayRectIntersection(cx, cy, nx, ny, minX, minY, maxX, maxY, pad) {
-      const candidates = [];
-      const eps = 1e-6;
-      // left edge x = minX - pad
-      if (Math.abs(nx) > eps) {
-        const t1 = ( (minX - pad) - cx ) / nx;
-        if (t1 > 0) candidates.push({t:t1, x: cx + nx*t1, y: cy + ny*t1});
-        const t2 = ( (maxX + pad) - cx ) / nx;
-        if (t2 > 0) candidates.push({t:t2, x: cx + nx*t2, y: cy + ny*t2});
-      }
-      if (Math.abs(ny) > eps) {
-        const t3 = ( (minY - pad) - cy ) / ny;
-        if (t3 > 0) candidates.push({t:t3, x: cx + nx*t3, y: cy + ny*t3});
-        const t4 = ( (maxY + pad) - cy ) / ny;
-        if (t4 > 0) candidates.push({t:t4, x: cx + nx*t4, y: cy + ny*t4});
-      }
-      // choose smallest positive t that is outside rect (and point should be on corresponding edge)
-      if (!candidates.length) return null;
-      candidates.sort((a,b)=>a.t-b.t);
-      // return first candidate (closest intersection)
-      return candidates[0];
-    }
-
-    // Main draw function: places labels outside the map border
+    // draw map with labels only on left/right columns
     function draw(){
       if(!features.length){ alert("TopoJSON not loaded yet."); return; }
 
@@ -263,6 +238,27 @@
 
       const { mapping, dataMap } = getMappings();
 
+      // build data list in the data-box (District — value)
+      const dataListEl = document.getElementById("dataList");
+      dataListEl.innerHTML = "";
+      const orderedNames = Object.keys(mapping);
+      if(orderedNames.length === 0){
+        dataListEl.textContent = "Selected district data will list here as 'District — value'.";
+      } else {
+        const ul = document.createElement("div");
+        ul.style.display = "flex";
+        ul.style.flexDirection = "column";
+        ul.style.gap = "6px";
+        orderedNames.forEach(n => {
+          const item = document.createElement("div");
+          item.textContent = `${n} — ${dataMap[n] || ""}`;
+          item.style.fontWeight = "600";
+          ul.appendChild(item);
+        });
+        dataListEl.appendChild(ul);
+      }
+
+      // render SVG map
       const wrap = d3.select("#map-area");
       wrap.selectAll("*").remove();
 
@@ -288,155 +284,151 @@
       const innerW = width;
       const innerH = height - 60;
 
-      // projection & path
       const projection = d3.geoMercator()
         .fitSize([innerW, innerH], { type:"FeatureCollection", features });
 
       const path = d3.geoPath().projection(projection);
 
-      // fill districts (no stroke to hide inside seams)
+      // fill districts
       g.selectAll("path.district")
         .data(features)
         .join("path")
         .attr("class","district")
         .attr("d", path)
-        .attr("fill", d => {
-          const nm = featureName(d);
-          return mapping[nm] || "#ffffff";
-        })
+        .attr("fill", d => mapping[featureName(d)] || "#ffffff")
         .attr("stroke","none");
 
-      // compute bounding box of the whole map (projected)
-      const bounds = path.bounds({ type:"FeatureCollection", features });
-      const minX = bounds[0][0], minY = bounds[0][1];
-      const maxX = bounds[1][0], maxY = bounds[1][1];
-      const pad = 28; // distance from map edge where labels will be placed
-
-      // draw outer boundary and internal borders
+      // draw outer & internal borders
       if(topo && topo.objects && topo.objects[objectKey]){
         const obj = topo.objects[objectKey];
-
         const outer = topojson.mesh(topo, obj, (a,b) => a === b);
-        g.append("path")
-          .attr("d", path(outer))
-          .attr("fill","none")
-          .attr("stroke","#0f1724")
-          .attr("stroke-width",1.1);
-
+        g.append("path").attr("d", path(outer)).attr("fill","none").attr("stroke","#0f1724").attr("stroke-width",1.1);
         const internal = topojson.mesh(topo, obj, (a,b) =>
           a !== b && a.properties && b.properties && a.properties[nameProp] !== b.properties[nameProp]
         );
-        g.append("path")
-          .attr("d", path(internal))
-          .attr("fill","none")
-          .attr("stroke","#0f1724")
-          .attr("stroke-width",0.6);
+        g.append("path").attr("d", path(internal)).attr("fill","none").attr("stroke","#0f1724").attr("stroke-width",0.6);
       }
 
-      // centroids in SVG coords
+      // bounding box of map in SVG coords
+      const bounds = path.bounds({ type:"FeatureCollection", features });
+      const minX = bounds[0][0], minY = bounds[0][1];
+      const maxX = bounds[1][0], maxY = bounds[1][1];
+
+      // compute centroids
       const centroids = computeCentroids(projection);
 
-      const center = [ (minX+maxX)/2, (minY+maxY)/2 ];
+      // split selected items into left and right by centroid x
+      const centerX = (minX + maxX) / 2;
+      const selected = Object.keys(mapping);
+      const leftItems = [], rightItems = [];
+      selected.forEach(name => {
+        const c = centroids[name];
+        if(!c) return;
+        if (c[0] < centerX) leftItems.push({name, centroid: c, color: mapping[name], value: dataMap[name]});
+        else rightItems.push({name, centroid: c, color: mapping[name], value: dataMap[name]});
+      });
 
-      // group for callouts
+      // decide label column X positions (inside SVG viewport)
+      const colPad = 34;          // distance from map bbox
+      const colLeftX = Math.max(8, minX - colPad - 180);   // label column left (ensure not off-viewport)
+      const colRightX = Math.min(innerW - 8 - 180, maxX + colPad); // label column right
+
+      // available Y range for stacking labels (within projected map vertical bounds)
+      const topY = Math.max(6, minY - 10);
+      const bottomY = Math.min(innerH - 6, maxY + 10);
+
+      // helper to assign Y positions evenly for N items within topY..bottomY
+      function computeYPositions(n){
+        const ys = [];
+        if(n === 0) return ys;
+        const space = (bottomY - topY) / (n + 1);
+        for(let i=1;i<=n;i++){
+          ys.push(topY + i * space);
+        }
+        return ys;
+      }
+
+      const leftYs = computeYPositions(leftItems.length);
+      const rightYs = computeYPositions(rightItems.length);
+
+      // draw callouts: lines from centroid -> labelX,labelY; label box at labelX,labelY
       const labelGroup = g.append("g").attr("class","callouts");
 
-      // create list of callout items
-      const calloutItems = Object.keys(mapping).map(name => ({
-        name,
-        color: mapping[name],
-        text: dataMap[name] || ""
-      }));
-
-      // Draw callouts
-      calloutItems.forEach((item, idx) => {
-        const c = centroids[item.name];
-        if(!c || !isFinite(c[0]) || !isFinite(c[1])) return;
-
-        // direction from center through centroid
-        let vx = c[0] - center[0];
-        let vy = c[1] - center[1];
-        const vlen = Math.sqrt(vx*vx + vy*vy) || 1;
-        const nx = vx / vlen;
-        const ny = vy / vlen;
-
-        // find the intersection with the expanded rectangle (map bbox)
-        const inter = rayRectIntersection(center[0], center[1], nx, ny, minX, minY, maxX, maxY, pad);
-        let labelPoint;
-        if (inter) {
-          // move a little outward from the intersection so label is clearly outside
-          const offset = 12;
-          labelPoint = [inter.x + nx * offset, inter.y + ny * offset];
-        } else {
-          // fallback: place label at center + normalized * big radius
-          labelPoint = [ center[0] + nx * Math.max(innerW, innerH) * 0.6,
-                         center[1] + ny * Math.max(innerW, innerH) * 0.6 ];
-        }
-
-        // leader line from centroid -> label anchor
+      // helper to render one label
+      function renderLabel(labelX, labelY, item, anchor) {
+        // leader line
         labelGroup.append("line")
-          .attr("x1", c[0])
-          .attr("y1", c[1])
-          .attr("x2", labelPoint[0])
-          .attr("y2", labelPoint[1])
+          .attr("x1", item.centroid[0])
+          .attr("y1", item.centroid[1])
+          .attr("x2", labelX)
+          .attr("y2", labelY)
           .attr("stroke", item.color)
           .attr("stroke-width", 2)
           .attr("stroke-linecap", "round");
 
-        // prepare label text: "District — data"
-        const nameText = item.name;
-        const dataText = item.text && item.text.trim() ? item.text.trim() : "";
-        const combined = dataText ? `${nameText} — ${dataText}` : nameText;
-        const estWidth = Math.min(300, Math.max(80, combined.length * 7));
+        // compute box width from text length
+        const combined = item.value ? `${item.name} — ${item.value}` : item.name;
+        const estWidth = Math.min(320, Math.max(80, combined.length * 7));
         const boxPadX = 8, boxPadY = 6;
+        // shift box so text sits nicely; anchor left or right
+        let boxX = anchor === "left" ? labelX - estWidth - 10 : labelX + 10;
+        let boxY = labelY - (item.value ? 18 : 12);
+        // clamp inside viewport
+        boxX = Math.max(6, Math.min(innerW - estWidth - boxPadX*2 - 6, boxX));
+        boxY = Math.max(6, Math.min(innerH - (item.value?36:24) - 6, boxY));
 
-        // place label box so that text doesn't overlap the line anchor (shift perpendicular)
-        const perpX = -ny * 8;
-        const perpY = nx * 8;
-
-        let boxX = labelPoint[0] + perpX - estWidth/2;
-        let boxY = labelPoint[1] + perpY - (dataText ? 18 : 10);
-
-        // clamp label inside the SVG viewport but keep it outside the bbox
-        boxX = Math.max(6, Math.min(width - estWidth - boxPadX*2 - 6, boxX));
-        boxY = Math.max(6, Math.min(height - (dataText ? 36 : 24) - 6, boxY));
-
-        // draw background rect
+        // background rect
         labelGroup.append("rect")
           .attr("x", boxX - boxPadX)
           .attr("y", boxY - boxPadY)
           .attr("width", estWidth + boxPadX*2)
-          .attr("height", dataText ? 36 : 24)
-          .attr("class", "label-bg")
-          .attr("rx", 6).attr("ry", 6)
-          .attr("fill", "#ffffff").attr("stroke", "#e2e8f0");
+          .attr("height", item.value ? 36 : 24)
+          .attr("class","label-bg")
+          .attr("rx",6).attr("ry",6)
+          .attr("fill","#fff").attr("stroke","#e2e8f0");
 
-        // district name
+        // text
         labelGroup.append("text")
           .attr("x", boxX)
           .attr("y", boxY + 10)
-          .attr("class", "callout-label")
-          .text(nameText);
+          .attr("class","label-name")
+          .text(item.name);
 
-        // data text if provided
-        if(dataText) {
+        if(item.value){
           labelGroup.append("text")
             .attr("x", boxX)
             .attr("y", boxY + 26)
-            .attr("class", "callout-sub")
-            .text(dataText);
+            .attr("class","label-value")
+            .text(item.value);
         }
+      }
+
+      // render left column (sorted top->bottom by centroid y to keep visual order)
+      leftItems.sort((a,b)=>a.centroid[1]-b.centroid[1]);
+      leftItems.forEach((it, idx) => {
+        const y = leftYs[idx] || (topY + idx * 18);
+        // label anchor point on left column: x near colLeftX
+        const anchorPointX = colLeftX;
+        renderLabel(anchorPointX, y, it, "left");
+      });
+
+      // render right column
+      rightItems.sort((a,b)=>a.centroid[1]-b.centroid[1]);
+      rightItems.forEach((it, idx) => {
+        const y = rightYs[idx] || (topY + idx * 18);
+        const anchorPointX = colRightX;
+        renderLabel(anchorPointX, y, it, "right");
       });
 
       // enable exports
       document.getElementById("downloadPng").disabled = false;
       document.getElementById("downloadPdf").disabled = false;
-      statusEl.textContent = "Map generated with outside callouts.";
+      statusEl.textContent = "Map generated. Labels placed in left/right columns and data listed below.";
     }
 
     document.getElementById("generateBtn").addEventListener("click", draw);
 
-    // Export helpers (include labels & lines)
+    // Export helpers
     async function downloadPNG(){
       const area = document.getElementById("map-wrap");
       const canvas = await html2canvas(area, {scale:2});
