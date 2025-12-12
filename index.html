@@ -305,7 +305,8 @@
           entry.style.gap = "4px";
 
           const title = document.createElement("div");
-          title.textContent = n + (lines.length ? " —" : "");
+          // <-- changed: removed the ' —' after the district name
+          title.textContent = n;
           title.style.fontWeight = "700";
           entry.appendChild(title);
 
@@ -489,7 +490,7 @@
           dataLines.forEach((ln, idx) => {
             tx.append("tspan")
               .attr("x", boxX)
-              .attr("dy", idx === 0 ? lineHeight : lineHeight) // move down for each tspan
+              .attr("dy", idx === 0 ? lineHeight : lineHeight)
               .attr("class", "label-value")
               .text(ln);
           });
