@@ -28,7 +28,7 @@
     .card{background:#fff;border-radius:10px;padding:14px;box-shadow:0 6px 18px rgba(10,20,50,0.06)}
     h1{margin:0 0 8px;font-size:22px}
     label{display:block;font-weight:600;margin:8px 0 4px;font-size:0.95rem}
-    input[type="text"],select{width:100%;padding:8px;border-radius:6px;border:1px solid #d1d7e0;font-size:0.95rem}
+    input[type="text"],select,textarea{width:100%;padding:8px;border-radius:6px;border:1px solid #d1d7e0;font-size:0.95rem}
     .row{display:flex;gap:8px;align-items:center;margin-bottom:8px}
     .row select{flex:1}
     .row input[type="color"]{width:44px;height:34px;padding:0;border:none}
@@ -97,7 +97,7 @@
           <option>16</option><option>17</option><option>18</option><option>19</option><option>20</option>
         </select>
 
-        <div class="small">Each row: district, colour and the data text (multi-line supported).</div>
+        <div class="small">Each row: district, colour and the data text (multi-line or separated by | , ; : / । ).</div>
 
         <div id="district-selectors" style="margin-top:10px"></div>
 
@@ -249,7 +249,6 @@
     // compute centroids (projected)
     function computeCentroids(projection){
       const centroids = {};
-      // some districts may be multi-polygon; average centroids by feature (here each feature is a district)
       features.forEach(f => {
         const centroid = d3.geoCentroid(f);
         const p = projection(centroid);
@@ -258,24 +257,42 @@
       return centroids;
     }
 
-    // helper: split user data string into lines (preserve newlines, common separators, or heuristic)
+    // improved splitter: supports newline, many separators and Hindi danda.
     function splitDataLines(text){
       if(!text) return [];
-      // explicit newline
-      if(text.includes('\n')) return text.split('\n').map(s=>s.trim()).filter(Boolean);
-      // split by common separators
-      const sepMatch = /[|;:]+/;
-      if(sepMatch.test(text)) return text.split(sepMatch).map(s=>s.trim()).filter(Boolean);
-      // try pattern segments ending with number (good for "कार्यक्रम 7 संख्या 400 ...")
-      const re = /[^0-9\n]+?\d+/gu;
+      // 1) preserve explicit newlines
+      if(text.includes('\n')){
+        return text.split('\n').map(s=>s.trim()).filter(Boolean);
+      }
+
+      // 2) split on common separators: pipe, semicolon, colon, comma, plus, slash, danda
+      // include both western comma and devanagari danda (।)
+      const sepRegex = /[|;:,+\/।]+/;
+      if(sepRegex.test(text)){
+        return text.split(sepRegex).map(s=>s.trim()).filter(Boolean);
+      }
+
+      // 3) try to detect segments that end with numbers (good for "कार्यक्रम 7 संख्या 400 ..." patterns)
+      // this regex finds groups that include some non-digit characters followed by digits (possibly multiple groups)
+      const re = /(?:[^\d\|;:,+\/।]+?\d+(?:\s*[^\d\|;:,+\/।\n]+?)?)/gu;
       const segs = text.match(re);
-      if(segs && segs.length) return segs.map(s=>s.trim());
-      // fallback wrap into ~28 char lines
+      if(segs && segs.length){
+        // trim and remove empties
+        const out = segs.map(s=>s.trim()).filter(Boolean);
+        if(out.length) return out;
+      }
+
+      // 4) fallback: break into short lines by words (~28 chars)
       const words = text.split(/\s+/).filter(Boolean);
-      const lines = []; let line="";
+      const lines = [];
+      let line = "";
       for(const w of words){
-        if((line + ' ' + w).trim().length > 28){ if(line) lines.push(line.trim()); line = w; }
-        else { line = (line + ' ' + w).trim(); }
+        if((line + ' ' + w).trim().length > 28){
+          if(line) lines.push(line.trim());
+          line = w;
+        } else {
+          line = (line + ' ' + w).trim();
+        }
       }
       if(line) lines.push(line.trim());
       return lines;
@@ -331,7 +348,7 @@
         .attr("viewBox", `0 0 ${width} ${height}`)
         .attr("preserveAspectRatio","xMidYMid meet");
 
-      // embed logo (optional file logo.svg — include if you want it in exports)
+      // embed logo (optional, include logo.svg next to this file if you want it)
       svg.append("image").attr("href","logo.svg").attr("x",10).attr("y",6).attr("height",44).attr("preserveAspectRatio","xMidYMid meet");
 
       if(mapTitle){
