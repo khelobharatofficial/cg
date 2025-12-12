@@ -237,6 +237,42 @@
       return centroids;
     }
 
+    // helper: split user data string into lines
+    function splitDataLines(text){
+      if(!text) return [];
+      // preserve explicit newlines
+      if(text.includes('\n')) return text.split('\n').map(s=>s.trim()).filter(Boolean);
+
+      // split on common separators
+      const sepMatch = /[|;,:]+/;
+      if(sepMatch.test(text)){
+        return text.split(sepMatch).map(s=>s.trim()).filter(Boolean);
+      }
+
+      // try to match segments that end with a number (works for "कार्यक्रम 7 संख्या 400 ...")
+      // matches sequences of characters (non-digits) followed by digits
+      const re = /[^0-9\n]+?\d+/gu;
+      const segs = text.match(re);
+      if(segs && segs.length){
+        return segs.map(s=>s.trim());
+      }
+
+      // fallback: wrap into short lines (~28 chars) by words
+      const words = text.split(/\s+/).filter(Boolean);
+      const lines = [];
+      let line = "";
+      for(const w of words){
+        if((line + ' ' + w).trim().length > 28){
+          if(line) lines.push(line.trim());
+          line = w;
+        } else {
+          line = (line + ' ' + w).trim();
+        }
+      }
+      if(line) lines.push(line.trim());
+      return lines;
+    }
+
     // draw map with labels only on left/right columns
     function draw(){
       if(!features.length){ alert("TopoJSON not loaded yet."); return; }
@@ -247,24 +283,51 @@
 
       const { mapping, dataMap } = getMappings();
 
-      // build data list in the data-box (District — value)
+      // build data list in the data-box (District — value) with multi-line support
       const dataListEl = document.getElementById("dataList");
       dataListEl.innerHTML = "";
       const orderedNames = Object.keys(mapping);
       if(orderedNames.length === 0){
         dataListEl.textContent = "Selected district data will list here as 'District — value'.";
       } else {
-        const ul = document.createElement("div");
-        ul.style.display = "flex";
-        ul.style.flexDirection = "column";
-        ul.style.gap = "6px";
+        const container = document.createElement("div");
+        container.style.display = "flex";
+        container.style.flexDirection = "column";
+        container.style.gap = "10px";
+
         orderedNames.forEach(n => {
-          const item = document.createElement("div");
-          item.textContent = `${n} — ${dataMap[n] || ""}`;
-          item.style.fontWeight = "600";
-          ul.appendChild(item);
+          const raw = dataMap[n] || "";
+          const lines = splitDataLines(raw);
+
+          // each entry: district name as title, then lines beneath
+          const entry = document.createElement("div");
+          entry.style.display = "flex";
+          entry.style.flexDirection = "column";
+          entry.style.gap = "4px";
+
+          const title = document.createElement("div");
+          title.textContent = n + (lines.length ? " —" : "");
+          title.style.fontWeight = "700";
+          entry.appendChild(title);
+
+          if(lines.length){
+            const linesWrap = document.createElement("div");
+            linesWrap.style.display = "flex";
+            linesWrap.style.flexDirection = "column";
+            linesWrap.style.marginLeft = "6px";
+            lines.forEach(lineText => {
+              const lineDiv = document.createElement("div");
+              lineDiv.textContent = lineText;
+              lineDiv.style.fontWeight = "600";
+              linesWrap.appendChild(lineDiv);
+            });
+            entry.appendChild(linesWrap);
+          }
+
+          container.appendChild(entry);
         });
-        dataListEl.appendChild(ul);
+
+        dataListEl.appendChild(container);
       }
 
       // render SVG map
@@ -467,6 +530,3 @@
   </script>
 </body>
 </html>
-
-
-
