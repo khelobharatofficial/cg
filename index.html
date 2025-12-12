@@ -45,18 +45,6 @@
     .label-name { font-size:12px; font-weight:700; fill:#071022; }
     .label-value { font-size:12px; fill:#071022; opacity:0.9; }
     footer{margin-top:18px;text-align:center;color:#555}
-
-    /* --- Mobile-only forced desktop layout class --- */
-    /* applied only when the detection script finds a mobile viewport */
-    #map-wrap.force-desktop,
-    #map-area.force-desktop {
-      width: 1528px !important;
-      max-width: 1528px !important;
-      overflow: visible !important;
-      margin: 0 auto !important;
-    }
-    /* hide horizontal overflow while exporting */
-    body.force-exporting { overflow-x: hidden !important; }
   </style>
 </head>
 <body>
@@ -128,34 +116,6 @@
 
     <footer>© 2025 <strong>Khelo Bharat Officials</strong>.</footer>
   </div>
-
-  <script>
-    /************************************************************************
-     * Mobile detection: apply .force-desktop to #map-wrap only on mobile
-     * (viewport <= MOBILE_BREAKPOINT). This ensures forced desktop width
-     * is used only for mobile visitors.
-     ************************************************************************/
-    (function(){
-      const MOBILE_BREAKPOINT = 900; // <= this width considered mobile
-      const mapWrap = document.getElementById('map-wrap');
-
-      function updateForceDesktopClass(){
-        const isMobile = window.innerWidth <= MOBILE_BREAKPOINT;
-        if(isMobile){
-          mapWrap && mapWrap.classList.add('force-desktop');
-          // also add to map-area for safe measure
-          document.getElementById('map-area')?.classList.add('force-desktop');
-        } else {
-          mapWrap && mapWrap.classList.remove('force-desktop');
-          document.getElementById('map-area')?.classList.remove('force-desktop');
-        }
-      }
-
-      updateForceDesktopClass();
-      window.addEventListener('resize', updateForceDesktopClass);
-      window.addEventListener('orientationchange', () => setTimeout(updateForceDesktopClass, 300));
-    })();
-  </script>
 
   <script>
     // Globals
@@ -277,8 +237,8 @@
       return centroids;
     }
 
-    // Make draw async so we can await a small reflow pause when forcing desktop width on mobile
-    async function draw(){
+    // draw map with labels only on left/right columns
+    function draw(){
       if(!features.length){ alert("TopoJSON not loaded yet."); return; }
 
       const mapTitle = document.getElementById("mapTitle").value.trim();
@@ -311,38 +271,9 @@
       const wrap = d3.select("#map-area");
       wrap.selectAll("*").remove();
 
-      // Decide width/height. If #map-wrap has .force-desktop class (applied only on mobile),
-      // force DESKTOP_WIDTH and measure height from the rendered #map-area so exports match laptop.
-      const mapWrapEl = document.getElementById('map-wrap');
-      let width = 920;
-      let height = 700;
-
-      const FORCE_DESKTOP_WIDTH = 1528; // laptop width you specified
-
-      if (mapWrapEl && mapWrapEl.classList.contains('force-desktop')) {
-        // apply forced width to container to make layout identical to laptop
-        mapWrapEl.style.width = FORCE_DESKTOP_WIDTH + "px";
-        document.body.classList.add('force-exporting');
-
-        // tiny pause to let browser apply styles and reflow
-        await new Promise(resolve => setTimeout(resolve, 8));
-
-        // measure full height of #map-area (map + labels + data-box)
-        const mapAreaEl = document.getElementById('map-area');
-        const measuredH = Math.ceil(mapAreaEl.getBoundingClientRect().height || 800);
-
-        width = FORCE_DESKTOP_WIDTH;
-        height = measuredH;
-      } else {
-        // default responsive sizes for desktop (keeps current look)
-        width = 920;
-        height = 700;
-      }
-
-      // Create SVG with fixed width & measured height
+      const width = 920;
+      const height = 700;
       const svg = wrap.append("svg")
-        .attr("width", width)
-        .attr("height", height)
         .attr("viewBox", `0 0 ${width} ${height}`)
         .attr("preserveAspectRatio","xMidYMid meet");
 
@@ -502,61 +433,33 @@
       document.getElementById("downloadPng").disabled = false;
       document.getElementById("downloadPdf").disabled = false;
       statusEl.textContent = "Map generated. Labels placed in left/right columns and data listed below.";
-
-      // Note: we DO NOT immediately remove the forced width here. The .force-desktop
-      // class is applied only on mobile users (via detection script). If you prefer
-      // removing the inline width after drawing, uncomment the cleanup below:
-      //
-      // if (mapWrapEl && mapWrapEl.classList.contains('force-desktop')) {
-      //   // revert to responsive after draw (optional)
-      //   mapWrapEl.style.width = "";
-      //   document.body.classList.remove('force-exporting');
-      // }
     }
 
     document.getElementById("generateBtn").addEventListener("click", draw);
 
-    // Export helpers (html2canvas will capture #map-wrap as currently rendered).
+    // Export helpers
     async function downloadPNG(){
-      try {
-        // ensure we hide horizontal scroll while exporting
-        document.body.classList.add('force-exporting');
-        // big scale to keep sharpness (you told not to add extra features — keep scale moderate)
-        const canvas = await html2canvas(document.getElementById("map-wrap"), { scale: 2, useCORS: true, logging: false });
-        const link = document.createElement("a");
-        link.download = "chhattisgarh-map-callouts.png";
-        link.href = canvas.toDataURL("image/png");
-        link.click();
-      } catch (err) {
-        console.error("PNG export failed:", err);
-        alert("Export failed. Try generating the map again.");
-      } finally {
-        // restore scrolling
-        document.body.classList.remove('force-exporting');
-      }
+      const area = document.getElementById("map-wrap");
+      const canvas = await html2canvas(area, {scale:2});
+      const link = document.createElement("a");
+      link.download = "chhattisgarh-map-callouts.png";
+      link.href = canvas.toDataURL("image/png");
+      link.click();
     }
-
     async function downloadPDF(){
-      try {
-        document.body.classList.add('force-exporting');
-        const canvas = await html2canvas(document.getElementById("map-wrap"), { scale: 2, useCORS: true, logging: false });
-        const img = canvas.toDataURL("image/png");
-        const { jsPDF } = window.jspdf;
-        const pdf = new jsPDF("p","mm","a4");
-        const pageW = pdf.internal.pageSize.getWidth();
-        const pageH = pdf.internal.pageSize.getHeight();
-        const imgProps = pdf.getImageProperties(img);
-        const pdfW = pageW - 12;
-        const pdfH = imgProps.height * pdfW / imgProps.width;
-        const y = Math.max((pageH - pdfH)/2, 8);
-        pdf.addImage(img,"PNG",6,y,pdfW,pdfH);
-        pdf.save("chhattisgarh-map-callouts.pdf");
-      } catch (err) {
-        console.error("PDF export failed:", err);
-        alert("Export failed. Try generating the map again.");
-      } finally {
-        document.body.classList.remove('force-exporting');
-      }
+      const area = document.getElementById("map-wrap");
+      const canvas = await html2canvas(area, {scale:2});
+      const img = canvas.toDataURL("image/png");
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF("p","mm","a4");
+      const pageW = pdf.internal.pageSize.getWidth();
+      const pageH = pdf.internal.pageSize.getHeight();
+      const imgProps = pdf.getImageProperties(img);
+      const pdfW = pageW - 12;
+      const pdfH = imgProps.height * pdfW / imgProps.width;
+      const y = Math.max((pageH - pdfH)/2, 8);
+      pdf.addImage(img,"PNG",6,y,pdfW,pdfH);
+      pdf.save("chhattisgarh-map-callouts.pdf");
     }
 
     document.getElementById("downloadPng").addEventListener("click", downloadPNG);
@@ -564,3 +467,6 @@
   </script>
 </body>
 </html>
+
+
+
