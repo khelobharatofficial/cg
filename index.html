@@ -41,9 +41,29 @@
     #map-area{min-height:520px;border-radius:6px;background:#fff;padding:8px;display:flex;align-items:center;justify-content:center;position:relative}
     svg{width:100%;height:auto;display:block}
     #data-box{margin-top:10px;padding:10px;border-radius:8px;background:#f1f5f9;border:1px solid #e2e8f0}
+
+    /* responsive grid for data list */
+    #dataList {
+      margin-top:8px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+      align-items: start;
+    }
+    .data-entry {
+      background: #fff;
+      border-radius: 8px;
+      padding: 10px;
+      border: 1px solid #e6edf4;
+      box-shadow: 0 2px 6px rgba(8,18,30,0.03);
+    }
+    .data-entry .title { font-weight:700; margin-bottom:6px; color:#0b1724; }
+    .data-entry .line { font-weight:600; color:#133143; margin:2px 0; font-size:0.95rem; }
+
     .label-bg { fill:#ffffff; stroke:#e2e8f0; stroke-width:0.8px; rx:6px; ry:6px; }
     .label-name { font-size:12px; font-weight:700; fill:#071022; }
     .label-value { font-size:12px; fill:#071022; opacity:0.9; }
+
     footer{margin-top:18px;text-align:center;color:#555}
   </style>
 </head>
@@ -56,7 +76,7 @@
       <div>
         <h1 style="margin:0; font-size:22px;">Chhattisgarh Map — District</h1>
         <p class="small" style="margin:6px 0 0;">
-          Labels will appear in tidy columns on either side of the map. The data list prints below the map as 'District — value'.
+          Labels will appear in tidy columns on either side of the map. The data list prints below the map as district cards.
         </p>
       </div>
     </header>
@@ -77,7 +97,7 @@
           <option>16</option><option>17</option><option>18</option><option>19</option><option>20</option>
         </select>
 
-        <div class="small">Each row: district, colour and the data text (e.g. "11145").</div>
+        <div class="small">Each row: district, colour and the data text (multi-line supported).</div>
 
         <div id="district-selectors" style="margin-top:10px"></div>
 
@@ -108,7 +128,7 @@
           </div>
           <div id="data-box">
             <h3 id="dataTitleDisplay">Data title will appear here</h3>
-            <div id="dataList" class="small" style="margin-top:8px">Selected district data will list here as 'District — value'.</div>
+            <div id="dataList" class="small" style="margin-top:8px">Selected district data will list here as cards.</div>
           </div>
         </div>
       </div>
@@ -187,7 +207,7 @@
 
         const dataInput = document.createElement("input");
         dataInput.type = "text";
-        dataInput.placeholder = "value (e.g. 11145)";
+        dataInput.placeholder = "value (e.g. lines or pipe-separated)";
         dataInput.className = "data-input district-data";
 
         row.appendChild(label);
@@ -229,44 +249,33 @@
     // compute centroids (projected)
     function computeCentroids(projection){
       const centroids = {};
+      // some districts may be multi-polygon; average centroids by feature (here each feature is a district)
       features.forEach(f => {
         const centroid = d3.geoCentroid(f);
         const p = projection(centroid);
-        centroids[featureName(f)] = p;
+        if(p) centroids[featureName(f)] = p;
       });
       return centroids;
     }
 
-    // helper: split user data string into lines
+    // helper: split user data string into lines (preserve newlines, common separators, or heuristic)
     function splitDataLines(text){
       if(!text) return [];
-      // preserve explicit newlines
+      // explicit newline
       if(text.includes('\n')) return text.split('\n').map(s=>s.trim()).filter(Boolean);
-
-      // split on common separators
-      const sepMatch = /[|;,:]+/;
-      if(sepMatch.test(text)){
-        return text.split(sepMatch).map(s=>s.trim()).filter(Boolean);
-      }
-
-      // try to match segments that end with a number (works for "कार्यक्रम 7 संख्या 400 ...")
+      // split by common separators
+      const sepMatch = /[|;:]+/;
+      if(sepMatch.test(text)) return text.split(sepMatch).map(s=>s.trim()).filter(Boolean);
+      // try pattern segments ending with number (good for "कार्यक्रम 7 संख्या 400 ...")
       const re = /[^0-9\n]+?\d+/gu;
       const segs = text.match(re);
-      if(segs && segs.length){
-        return segs.map(s=>s.trim());
-      }
-
-      // fallback: wrap into short lines (~28 chars) by words
+      if(segs && segs.length) return segs.map(s=>s.trim());
+      // fallback wrap into ~28 char lines
       const words = text.split(/\s+/).filter(Boolean);
-      const lines = [];
-      let line = "";
+      const lines = []; let line="";
       for(const w of words){
-        if((line + ' ' + w).trim().length > 28){
-          if(line) lines.push(line.trim());
-          line = w;
-        } else {
-          line = (line + ' ' + w).trim();
-        }
+        if((line + ' ' + w).trim().length > 28){ if(line) lines.push(line.trim()); line = w; }
+        else { line = (line + ' ' + w).trim(); }
       }
       if(line) lines.push(line.trim());
       return lines;
@@ -282,52 +291,34 @@
 
       const { mapping, dataMap } = getMappings();
 
-      // build data list in the data-box (District — value) with multi-line support
+      // build data list in the data-box (responsive cards)
       const dataListEl = document.getElementById("dataList");
       dataListEl.innerHTML = "";
       const orderedNames = Object.keys(mapping);
       if(orderedNames.length === 0){
-        dataListEl.textContent = "Selected district data will list here as 'District — value'.";
+        dataListEl.textContent = "Selected district data will list here as cards.";
       } else {
-        const container = document.createElement("div");
-        container.style.display = "flex";
-        container.style.flexDirection = "column";
-        container.style.gap = "10px";
-
         orderedNames.forEach(n => {
           const raw = dataMap[n] || "";
           const lines = splitDataLines(raw);
 
-          // each entry: district name as title, then lines beneath
           const entry = document.createElement("div");
-          entry.style.display = "flex";
-          entry.style.flexDirection = "column";
-          entry.style.gap = "4px";
+          entry.className = "data-entry";
 
           const title = document.createElement("div");
-          // <-- changed: removed the ' —' after the district name
-          title.textContent = n;
-          title.style.fontWeight = "700";
+          title.className = "title";
+          title.textContent = n; // no dash
           entry.appendChild(title);
 
-          if(lines.length){
-            const linesWrap = document.createElement("div");
-            linesWrap.style.display = "flex";
-            linesWrap.style.flexDirection = "column";
-            linesWrap.style.marginLeft = "6px";
-            lines.forEach(lineText => {
-              const lineDiv = document.createElement("div");
-              lineDiv.textContent = lineText;
-              lineDiv.style.fontWeight = "600";
-              linesWrap.appendChild(lineDiv);
-            });
-            entry.appendChild(linesWrap);
-          }
+          lines.forEach(ln => {
+            const d = document.createElement("div");
+            d.className = "line";
+            d.textContent = ln;
+            entry.appendChild(d);
+          });
 
-          container.appendChild(entry);
+          dataListEl.appendChild(entry);
         });
-
-        dataListEl.appendChild(container);
       }
 
       // render SVG map
@@ -339,6 +330,9 @@
       const svg = wrap.append("svg")
         .attr("viewBox", `0 0 ${width} ${height}`)
         .attr("preserveAspectRatio","xMidYMid meet");
+
+      // embed logo (optional file logo.svg — include if you want it in exports)
+      svg.append("image").attr("href","logo.svg").attr("x",10).attr("y",6).attr("height",44).attr("preserveAspectRatio","xMidYMid meet");
 
       if(mapTitle){
         svg.append("text")
@@ -370,7 +364,7 @@
         .attr("fill", d => mapping[featureName(d)] || "#ffffff")
         .attr("stroke","none");
 
-      // draw outer & internal borders
+      // outer & internal borders
       if(topo && topo.objects && topo.objects[objectKey]){
         const obj = topo.objects[objectKey];
         const outer = topojson.mesh(topo, obj, (a,b) => a === b);
@@ -400,16 +394,14 @@
         else rightItems.push({name, centroid: c, color: mapping[name], value: dataMap[name]});
       });
 
-      // decide label column X positions (inside SVG viewport)
-      const colPad = 34;          // distance from map bbox
-      const colLeftX = Math.max(8, minX - colPad - 180);   // label column left (ensure not off-viewport)
-      const colRightX = Math.min(innerW - 8 - 180, maxX + colPad); // label column right
+      // label columns
+      const colPad = 34;
+      const colLeftX = Math.max(8, minX - colPad - 180);
+      const colRightX = Math.min(innerW - 8 - 180, maxX + colPad);
 
-      // available Y range for stacking labels (within projected map vertical bounds)
       const topY = Math.max(6, minY - 10);
       const bottomY = Math.min(innerH - 6, maxY + 10);
 
-      // helper to assign Y positions evenly for N items within topY..bottomY
       function computeYPositions(n){
         const ys = [];
         if(n === 0) return ys;
@@ -423,24 +415,18 @@
       const leftYs = computeYPositions(leftItems.length);
       const rightYs = computeYPositions(rightItems.length);
 
-      // draw callouts: lines from centroid -> labelX,labelY; label box at labelX,labelY
       const labelGroup = g.append("g").attr("class","callouts");
 
       // helper to render one label (multiline support inside svg)
       function renderLabel(labelX, labelY, item, anchor) {
-        // split lines for the item.value
         const dataLines = splitDataLines(item.value || "");
-
-        // measure text widths approximately (use character count)
-        // prepare combined lines (title + lines) to estimate width
         const titleText = item.name;
         const candidateLines = dataLines.length ? [titleText, ...dataLines] : [titleText];
         let maxLen = 0;
         candidateLines.forEach(s => { if(s.length > maxLen) maxLen = s.length; });
-        const estWidth = Math.min(320, Math.max(80, Math.round(maxLen * 7))); // estimate char width 7px
-
+        const estWidth = Math.min(320, Math.max(80, Math.round(maxLen * 7)));
         const boxPadX = 8, boxPadY = 6;
-        const lineHeight = 14; // pixels between lines
+        const lineHeight = 14;
         const titleHeight = 14;
         const dataHeight = dataLines.length ? (dataLines.length * lineHeight) : 0;
         const boxHeight = titleHeight + dataHeight + boxPadY*2 + (dataLines.length ? 6 : 0);
@@ -455,15 +441,11 @@
           .attr("stroke-width", 2)
           .attr("stroke-linecap", "round");
 
-        // position box depending on anchor
         let boxX = anchor === "left" ? labelX - estWidth - 10 : labelX + 10;
         let boxY = labelY - (boxHeight / 2);
-
-        // clamp inside viewport
         boxX = Math.max(6, Math.min(innerW - estWidth - boxPadX*2 - 6, boxX));
         boxY = Math.max(6, Math.min(innerH - boxHeight - 6, boxY));
 
-        // background rect
         labelGroup.append("rect")
           .attr("x", boxX - boxPadX)
           .attr("y", boxY - boxPadY)
@@ -473,44 +455,29 @@
           .attr("rx",6).attr("ry",6)
           .attr("fill","#fff").attr("stroke","#e2e8f0");
 
-        // text group
         const tx = labelGroup.append("text")
           .attr("x", boxX)
           .attr("y", boxY + 10)
           .attr("class","label-name");
 
-        // title (district name)
-        tx.append("tspan")
-          .attr("x", boxX)
-          .attr("dy", 0)
-          .text(titleText);
-
-        // data lines (if any) using smaller style (simulate .label-value)
+        tx.append("tspan").attr("x", boxX).attr("dy", 0).text(titleText);
         if(dataLines.length){
           dataLines.forEach((ln, idx) => {
-            tx.append("tspan")
-              .attr("x", boxX)
-              .attr("dy", idx === 0 ? lineHeight : lineHeight)
-              .attr("class", "label-value")
-              .text(ln);
+            tx.append("tspan").attr("x", boxX).attr("dy", lineHeight).attr("class","label-value").text(ln);
           });
         }
       }
 
-      // render left column (sorted top->bottom by centroid y to keep visual order)
       leftItems.sort((a,b)=>a.centroid[1]-b.centroid[1]);
       leftItems.forEach((it, idx) => {
         const y = leftYs[idx] || (topY + idx * 18);
-        const anchorPointX = colLeftX;
-        renderLabel(anchorPointX, y, it, "left");
+        renderLabel(colLeftX, y, it, "left");
       });
 
-      // render right column
       rightItems.sort((a,b)=>a.centroid[1]-b.centroid[1]);
       rightItems.forEach((it, idx) => {
         const y = rightYs[idx] || (topY + idx * 18);
-        const anchorPointX = colRightX;
-        renderLabel(anchorPointX, y, it, "right");
+        renderLabel(colRightX, y, it, "right");
       });
 
       // enable exports
