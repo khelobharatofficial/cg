@@ -250,7 +250,6 @@
       }
 
       // try to match segments that end with a number (works for "कार्यक्रम 7 संख्या 400 ...")
-      // matches sequences of characters (non-digits) followed by digits
       const re = /[^0-9\n]+?\d+/gu;
       const segs = text.match(re);
       if(segs && segs.length){
@@ -426,8 +425,25 @@
       // draw callouts: lines from centroid -> labelX,labelY; label box at labelX,labelY
       const labelGroup = g.append("g").attr("class","callouts");
 
-      // helper to render one label
+      // helper to render one label (multiline support inside svg)
       function renderLabel(labelX, labelY, item, anchor) {
+        // split lines for the item.value
+        const dataLines = splitDataLines(item.value || "");
+
+        // measure text widths approximately (use character count)
+        // prepare combined lines (title + lines) to estimate width
+        const titleText = item.name;
+        const candidateLines = dataLines.length ? [titleText, ...dataLines] : [titleText];
+        let maxLen = 0;
+        candidateLines.forEach(s => { if(s.length > maxLen) maxLen = s.length; });
+        const estWidth = Math.min(320, Math.max(80, Math.round(maxLen * 7))); // estimate char width 7px
+
+        const boxPadX = 8, boxPadY = 6;
+        const lineHeight = 14; // pixels between lines
+        const titleHeight = 14;
+        const dataHeight = dataLines.length ? (dataLines.length * lineHeight) : 0;
+        const boxHeight = titleHeight + dataHeight + boxPadY*2 + (dataLines.length ? 6 : 0);
+
         // leader line
         labelGroup.append("line")
           .attr("x1", item.centroid[0])
@@ -438,40 +454,45 @@
           .attr("stroke-width", 2)
           .attr("stroke-linecap", "round");
 
-        // compute box width from text length
-        const combined = item.value ? `${item.name} — ${item.value}` : item.name;
-        const estWidth = Math.min(320, Math.max(80, combined.length * 7));
-        const boxPadX = 8, boxPadY = 6;
-        // shift box so text sits nicely; anchor left or right
+        // position box depending on anchor
         let boxX = anchor === "left" ? labelX - estWidth - 10 : labelX + 10;
-        let boxY = labelY - (item.value ? 18 : 12);
+        let boxY = labelY - (boxHeight / 2);
+
         // clamp inside viewport
         boxX = Math.max(6, Math.min(innerW - estWidth - boxPadX*2 - 6, boxX));
-        boxY = Math.max(6, Math.min(innerH - (item.value?36:24) - 6, boxY));
+        boxY = Math.max(6, Math.min(innerH - boxHeight - 6, boxY));
 
         // background rect
         labelGroup.append("rect")
           .attr("x", boxX - boxPadX)
           .attr("y", boxY - boxPadY)
           .attr("width", estWidth + boxPadX*2)
-          .attr("height", item.value ? 36 : 24)
+          .attr("height", boxHeight)
           .attr("class","label-bg")
           .attr("rx",6).attr("ry",6)
           .attr("fill","#fff").attr("stroke","#e2e8f0");
 
-        // text
-        labelGroup.append("text")
+        // text group
+        const tx = labelGroup.append("text")
           .attr("x", boxX)
           .attr("y", boxY + 10)
-          .attr("class","label-name")
-          .text(item.name);
+          .attr("class","label-name");
 
-        if(item.value){
-          labelGroup.append("text")
-            .attr("x", boxX)
-            .attr("y", boxY + 26)
-            .attr("class","label-value")
-            .text(item.value);
+        // title (district name)
+        tx.append("tspan")
+          .attr("x", boxX)
+          .attr("dy", 0)
+          .text(titleText);
+
+        // data lines (if any) using smaller style (simulate .label-value)
+        if(dataLines.length){
+          dataLines.forEach((ln, idx) => {
+            tx.append("tspan")
+              .attr("x", boxX)
+              .attr("dy", idx === 0 ? lineHeight : lineHeight) // move down for each tspan
+              .attr("class", "label-value")
+              .text(ln);
+          });
         }
       }
 
@@ -479,7 +500,6 @@
       leftItems.sort((a,b)=>a.centroid[1]-b.centroid[1]);
       leftItems.forEach((it, idx) => {
         const y = leftYs[idx] || (topY + idx * 18);
-        // label anchor point on left column: x near colLeftX
         const anchorPointX = colLeftX;
         renderLabel(anchorPointX, y, it, "left");
       });
